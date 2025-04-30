@@ -1,9 +1,9 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import {exec} from 'child_process';
+import { exec } from 'child_process';
 import util from 'util';
-import {config} from './config';
-import {textFormatter} from './textFormatter';
+import { config } from './config';
+import { textFormatter } from './textFormatter';
 
 // execをPromiseでラップ
 const execPromise = util.promisify(exec);
@@ -22,6 +22,35 @@ export class SpeechSynthesizer {
     }
 
     /**
+     * テキストに適切な間（ポーズ）を挿入する
+     * @param text 変換前のテキスト
+     * @returns ポーズを挿入したテキスト
+     */
+    private addPauses(text: string): string {
+        return text
+            // 日本語の句読点に対応
+            .replace(/。/g, '。[[slnc 400]]')    // 句点に400ミリ秒の間を入れる
+            .replace(/、/g, '、[[slnc 200]]')    // 読点に200ミリ秒の間を入れる
+            .replace(/！/g, '！[[slnc 450]]')    // 感嘆符に450ミリ秒の間を入れる
+            .replace(/？/g, '？[[slnc 450]]')    // 疑問符に450ミリ秒の間を入れる
+            
+            // 英語の句読点に対応
+            .replace(/\.\s+/g, '.[[slnc 400]] ') // ピリオドの後に400ミリ秒の間を入れる
+            .replace(/,\s+/g, ',[[slnc 200]] ')  // コンマの後に200ミリ秒の間を入れる
+            .replace(/!\s+/g, '![[slnc 450]] ')  // 感嘆符の後に450ミリ秒の間を入れる
+            .replace(/\?\s+/g, '?[[slnc 450]] ') // 疑問符の後に450ミリ秒の間を入れる
+            .replace(/:\s+/g, ':[[slnc 300]] ')  // コロンの後に300ミリ秒の間を入れる
+            .replace(/;\s+/g, ';[[slnc 250]] ')  // セミコロンの後に250ミリ秒の間を入れる
+            
+            // 段落や話題の変わり目
+            .replace(/\n\n/g, '[[slnc 700]]\n\n')  // 段落間に700ミリ秒の間を入れる
+            .replace(/\n(?=\S)/g, '\n[[slnc 500]]') // 改行の後、次が空白でない場合に500ミリ秒の間を入れる
+
+            // 話題の切り替わりを示す表現の前後
+            .replace(/(ねえ|あのね|さて|それから|ところで|話は変わるけど|他にも|最後に)/g, '[[slnc 500]]$1[[slnc 200]]');
+    }
+
+    /**
      * テキストから音声ファイルを生成
      * @param text 読み上げるテキスト
      * @param outputPath 出力ファイルのパス (.aiff)
@@ -35,15 +64,18 @@ export class SpeechSynthesizer {
             }
 
             // 音声に適した形式にテキストを整形
-            const formattedText = textFormatter.prepareForSpeech(text);
+            let formattedText = textFormatter.prepareForSpeech(text);
+            
+            // テキストに適切な間（ポーズ）を挿入
+            formattedText = this.addPauses(formattedText);
 
             // 一時的にテキストファイルを保存（長いテキストのため）
             const tempTextFile = `${outputPath}.temp.txt`;
             fs.writeFileSync(tempTextFile, formattedText, 'utf8');
 
             // sayコマンドを実行して音声ファイルを生成
-            // const command = `say -r ${this.rate} -f "${tempTextFile}" -o "${outputPath}"`;
-            const command = `say -v "${this.voice}" -r ${this.rate} -f "${tempTextFile}" -o "${outputPath}"`;
+            const command = `say -r ${this.rate} -f "${tempTextFile}" -o "${outputPath}"`;
+            // const command = `say -v "${this.voice}" -r ${this.rate} -f "${tempTextFile}" -o "${outputPath}"`;
 
             console.log(`音声合成を実行中... (${path.basename(outputPath)})`);
             await execPromise(command);
@@ -154,12 +186,16 @@ export class SpeechSynthesizer {
             for (const file of inputFiles) {
                 if (fs.existsSync(file)) {
                     const text = fs.readFileSync(file, 'utf8');
-                    combinedText += text + '\n\n';
+                    combinedText += text + '\n\n[[slnc 1000]]\n\n'; // チャプター間に長めの間を挿入
                 }
             }
 
             // 結合したテキストを整形
-            const formattedText = textFormatter.prepareForSpeech(combinedText);
+            let formattedText = textFormatter.prepareForSpeech(combinedText);
+            
+            // テキストに適切な間（ポーズ）を挿入
+            formattedText = this.addPauses(formattedText);
+
             fs.writeFileSync(tempTextFile, formattedText, 'utf8');
 
             // sayコマンドで音声ファイルを生成
