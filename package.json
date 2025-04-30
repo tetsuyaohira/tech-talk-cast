@@ -1,0 +1,33 @@
+{
+  "name": "tech-talk-cast",
+  "version": "1.0.0",
+  "description": "EPUBファイルを読み込み、要約して音声ファイルに変換するアプリケーション",
+  "main": "dist/index.js",
+  "scripts": {
+    "start": "node dist/index.js",
+    "build": "tsc",
+    "dev": "ts-node src/index.ts",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "epub",
+    "text-to-speech",
+    "gpt",
+    "summary"
+  ],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "epub": "^1.2.1",
+    "chalk": "^4.1.2",
+    "axios": "^1.6.2",
+    "cheerio": "^1.0.0-rc.12",
+    "dotenv": "^16.3.1"
+  },
+  "devDependencies": {
+    "@types/epub": "^0.2.0",
+    "@types/node": "^20.11.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.3.3"
+  }
+}
