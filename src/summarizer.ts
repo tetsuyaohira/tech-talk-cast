@@ -221,17 +221,17 @@ export class Summarizer {
 
         // 各ファイルを処理
         for (let i = 0; i < files.length; i++) {
-          const file = files[i];
-          const inputFilePath = path.join(inputDir, file);
-          const outputFilePath = path.join(outputDir, `narrated_${file}`);
-          
-          try {
-            console.log(`[${i+1}/${files.length}] ファイル処理中: ${file}`);
-            await this.processChapterFile(inputFilePath, outputFilePath);
-            processedFiles.push(outputFilePath);
-          } catch (error) {
-            console.error(`ファイル "${file}" の処理を省略します:`, error);
-          }
+            const file = files[i];
+            const inputFilePath = path.join(inputDir, file);
+            const outputFilePath = path.join(outputDir, `narrated_${file}`);
+
+            try {
+                console.log(`[${i + 1}/${files.length}] ファイル処理中: ${file}`);
+                await this.processChapterFile(inputFilePath, outputFilePath);
+                processedFiles.push(outputFilePath);
+            } catch (error) {
+                console.error(`ファイル "${file}" の処理を省略します:`, error);
+            }
 
         }
 
