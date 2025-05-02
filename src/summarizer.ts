@@ -12,9 +12,9 @@ interface SummaryOptions {
 
 export class Summarizer {
     private apiKey: string;
-    private defaultModel = 'gpt-3.5-turbo';
+    private defaultModel = 'gpt-4o';
     private defaultTemperature = 0.7;
-    private defaultMaxLength = 4000;
+    private defaultMaxLength = 16000;
 
     constructor() {
         // 環境変数からAPIキーを取得
@@ -68,7 +68,11 @@ export class Summarizer {
 - 難解な文は、シンプルに分解してください
 - 音声で聞いて自然な流れになるように、語順や文の切り方を工夫してください
 
-出力は、音声用ナレーションとしてそのまま使える自然な日本語の文章にしてください。`
+出力は、音声用ナレーションとしてそのまま使える自然な日本語の文章にしてください。
+
+※短くまとめすぎず、話し言葉として自然なボリュームになるようにしてください。
+※内容の厚みや深みを持たせつつ、聞き手が飽きずに聞ける程度の長さを意識してください。
+※例え話や補足を使ってわかりやすく説明しながら、同じ内容を繰り返さず、スッキリ伝えてください。`
                         },
                         {
                             role: 'user',
@@ -76,6 +80,7 @@ export class Summarizer {
                         }
                     ],
                     temperature: temperature,
+                    max_tokens: 4096
                 },
                 {
                     headers: {
@@ -118,7 +123,7 @@ export class Summarizer {
             console.log(`チャンク ${i + 1}/${chunks.length} を処理中...`);
             const chunkSummary = await this.summarizeText(chunks[i], {
                 ...options,
-                maxLength: maxLength * 2 // 分割後はまとめて処理できるよう余裕を持たせる
+                maxLength: maxLength
             });
             summaries.push(chunkSummary);
         }
