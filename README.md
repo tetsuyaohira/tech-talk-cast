@@ -1,4 +1,5 @@
 # TechTalkCast
+
 # TechTalkCast
 
 技術書をポッドキャスト風に変換するアプリケーション
@@ -15,6 +16,7 @@ TechTalkCastは、EPUBフォーマットの技術書を読み込み、以下の�
 これにより、難解な技術書を通勤・通学中や家事の合間などに「聴く」ことができるようになります。
 
 ## インストール
+
 技術書（主にEPUB形式）を読み取り、要約してポッドキャスト風に変換するアプリケーション。
 
 ## 機能
@@ -40,3 +42,20 @@ cd tech-talk-cast
 
 # 依存パッケージのインストール
 npm install
+```
+
+## 実行方法
+
+```bash
+npm run dev "./books/ソフトウェアアーキテクチャの基礎.epub"
+npm run dev "./books/ソフトウェアアーキテクチャの基礎.epub" --no-speech --no-gpt
+```
+
+## mp3への変換
+
+```bash
+cd ./output/ソフトウェアアーキテクチャの基礎_audio
+for f in *.aiff; do
+  ffmpeg -i "$f" -codec:a libmp3lame -b:a 192k "${f%.aiff}.mp3"
+done
+```
