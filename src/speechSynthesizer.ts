@@ -111,6 +111,50 @@ export class SpeechSynthesizer {
     }
 
     /**
+     * 指定されたファイルリストを音声合成
+     * @param inputFiles 入力ファイルパスの配列
+     * @param outputDir 出力音声ファイルのディレクトリ
+     * @param fileExtension 出力ファイルの拡張子 (デフォルト: .aiff)
+     */
+    async synthesizeFiles(
+        inputFiles: string[],
+        outputDir: string,
+        fileExtension: string = '.aiff'
+    ): Promise<string[]> {
+        // 出力ディレクトリが存在しない場合は作成
+        if (!fs.existsSync(outputDir)) {
+            fs.mkdirSync(outputDir, {recursive: true});
+        }
+
+        const outputFiles: string[] = [];
+
+        console.log(`${inputFiles.length}個のファイルを音声に変換します...`);
+
+        // 各ファイルを処理
+        for (let i = 0; i < inputFiles.length; i++) {
+            const inputFile = inputFiles[i];
+            const fileName = path.basename(inputFile, '.txt');
+            const outputFile = path.join(outputDir, fileName + fileExtension);
+
+            try {
+                // テキストを読み込む
+                const text = fs.readFileSync(inputFile, 'utf8');
+
+                console.log(`[${i + 1}/${inputFiles.length}] 音声合成中: ${path.basename(inputFile)}`);
+
+                // 音声合成を実行
+                await this.synthesize(text, outputFile);
+                outputFiles.push(outputFile);
+
+            } catch (error) {
+                console.error(`ファイル "${inputFile}" の音声合成に失敗しました:`, error);
+            }
+        }
+
+        return outputFiles;
+    }
+
+    /**
      * ディレクトリ内のすべてのテキストファイルを音声ファイルに変換
      * @param inputDir 入力テキストファイルのディレクトリ
      * @param outputDir 出力音声ファイルのディレクトリ

@@ -334,6 +334,36 @@ ${chunkIndex > 0 ? `### 重要な注意事項：
     }
 
     /**
+     * フィルタリングされたチャプターを処理
+     */
+    async processValidChapters(validFiles: string[], outputDir: string): Promise<string[]> {
+        // 出力ディレクトリの作成
+        if (!fs.existsSync(outputDir)) {
+            fs.mkdirSync(outputDir, {recursive: true});
+        }
+
+        const processedFiles: string[] = [];
+
+        // 各ファイルを順番に処理
+        for (let i = 0; i < validFiles.length; i++) {
+            const inputFile = validFiles[i];
+            const fileName = path.basename(inputFile);
+            const outputFile = path.join(outputDir, `narrated_${fileName}`);
+
+            console.log(`\n[${i + 1}/${validFiles.length}] チャプター "${fileName}" を処理中...`);
+
+            try {
+                await this.processChapterFile(inputFile, outputFile);
+                processedFiles.push(outputFile);
+            } catch (error) {
+                console.error(`エラーが発生しました。スキップします: ${error}`);
+            }
+        }
+
+        return processedFiles;
+    }
+
+    /**
      * ディレクトリ内の複数チャプターを一括処理
      */
     async processAllChapters(inputDir: string, outputDir: string): Promise<string[]> {

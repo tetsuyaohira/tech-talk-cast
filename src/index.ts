@@ -71,6 +71,29 @@ async function main() {
         // リソースディレクトリのパス
         const extractedDir = path.join(config.outputDir, epubReader.getFileName());
 
+        // 抽出されたファイルからh1/h2/h3タグがないファイルをフィルタリング
+        console.log(chalk.blue('\n音声化対象ファイルをフィルタリング中...'));
+        const allFiles = FileManager.getFilesWithExtension(extractedDir, '.txt');
+        const validFiles: string[] = [];
+        const skippedFiles: string[] = [];
+
+        for (const file of allFiles) {
+            const content = fs.readFileSync(file, 'utf8');
+            if (epubReader.hasHeadingTags(content)) {
+                validFiles.push(file);
+            } else {
+                skippedFiles.push(path.basename(file));
+            }
+        }
+
+        if (skippedFiles.length > 0) {
+            console.log(chalk.yellow(`\nh1/h2/h3タグがないためスキップするファイル (${skippedFiles.length}個):`));
+            skippedFiles.forEach(file => {
+                console.log(chalk.gray(`  - ${file}`));
+            });
+        }
+        console.log(chalk.green(`\n音声化対象ファイル: ${validFiles.length}個`));
+
         // フラグ設定
         const shouldSummarize = !args.includes('--no-gpt');
         const shouldSynthesize = !args.includes('--no-speech');
@@ -87,8 +110,8 @@ async function main() {
             // サマライザーインスタンスを作成
             const summarizer = new Summarizer();
 
-            // すべてのチャプターを処理
-            processedFiles = await summarizer.processAllChapters(extractedDir, narratedDir);
+            // フィルタリングされたチャプターのみを処理
+            processedFiles = await summarizer.processValidChapters(validFiles, narratedDir);
 
             console.log(chalk.green(`\n${processedFiles.length}個のチャプターを会話調テキストに変換しました`));
             console.log(`会話調テキストの保存先: ${narratedDir}`);
@@ -109,27 +132,27 @@ async function main() {
             // 音声ファイルの保存先ディレクトリ
             const audioDir = path.join(config.outputDir, `${epubReader.getFileName()}_audio`);
 
-            // 音声変換する元ディレクトリを決定
-            let sourceDir: string;
+            // 音声変換する元ファイルリストを決定
+            let sourceFiles: string[] = [];
             
             // --no-gptが指定された場合、_narratedディレクトリが存在すればそれを使用
             if (!shouldSummarize && fs.existsSync(narratedDir)) {
                 const narratedFiles = FileManager.getFilesWithExtension(narratedDir, '.txt');
                 if (narratedFiles.length > 0) {
-                    sourceDir = narratedDir;
+                    sourceFiles = narratedFiles;
                     console.log(chalk.yellow('既存の会話調テキストから音声を生成します'));
                 } else {
-                    sourceDir = extractedDir;
+                    sourceFiles = validFiles;
                     console.log(chalk.yellow('会話調テキストが見つからないため、元のテキストから音声を生成します'));
                 }
             } else if (processedFiles.length > 0) {
-                sourceDir = narratedDir;
+                sourceFiles = processedFiles;
             } else {
-                sourceDir = extractedDir;
+                sourceFiles = validFiles;
             }
 
             // 音声ファイルを生成
-            const audioFiles = await synthesizer.synthesizeDirectory(sourceDir, audioDir, '.aiff');
+            const audioFiles = await synthesizer.synthesizeFiles(sourceFiles, audioDir, '.aiff');
 
             console.log(chalk.green(`\n${audioFiles.length}個の音声ファイルを生成しました`));
             console.log(`音声ファイルの保存先: ${audioDir}`);
@@ -138,14 +161,11 @@ async function main() {
             if (audioFiles.length > 0 && !args.includes('--no-combine')) {
                 console.log(chalk.blue('\n全チャプターを結合した音声ファイルを生成中...'));
 
-                // テキストファイルのパスリストを取得
-                const textFiles = FileManager.getFilesWithExtension(sourceDir, '.txt');
-
                 // 結合した音声ファイルのパス
                 const combinedAudioPath = path.join(audioDir, `${epubReader.getFileName()}_完全版.aiff`);
 
                 // 結合音声ファイルを生成
-                await synthesizer.synthesizeCombined(textFiles, combinedAudioPath);
+                await synthesizer.synthesizeCombined(sourceFiles, combinedAudioPath);
 
                 console.log(chalk.green(`\n結合音声ファイルを生成しました: ${combinedAudioPath}`));
 

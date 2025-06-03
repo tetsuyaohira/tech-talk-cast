@@ -301,6 +301,61 @@ export class EpubReader {
     }
 
     /**
+     * HTMLコンテンツから実際のタイトルを抽出
+     */
+    private extractTitleFromContent(content: string, fallbackTitle: string): string {
+        // h1タグからタイトルを抽出
+        const h1Match = content.match(/<h1[^>]*>(.+?)<\/h1>/i);
+        if (h1Match) {
+            // HTMLタグとアンカータグを除去
+            const title = h1Match[1]
+                .replace(/<[^>]+>/g, '')
+                .replace(/\s+/g, ' ')
+                .trim();
+            if (title.length > 0) {
+                return title;
+            }
+        }
+
+        // h1がない場合、h2タグを試す
+        const h2Match = content.match(/<h2[^>]*>(.+?)<\/h2>/i);
+        if (h2Match) {
+            const title = h2Match[1]
+                .replace(/<[^>]+>/g, '')
+                .replace(/\s+/g, ' ')
+                .trim();
+            if (title.length > 0) {
+                return title;
+            }
+        }
+
+        // それでもない場合は、最初の段落から抽出を試みる
+        const pMatch = content.match(/<p[^>]*>([^<]{10,100})/i);
+        if (pMatch) {
+            const title = pMatch[1]
+                .replace(/\s+/g, ' ')
+                .trim()
+                .substring(0, 50); // 最大50文字
+            if (title.length > 10) {
+                return title + (pMatch[1].length > 50 ? '...' : '');
+            }
+        }
+
+        // 全て失敗した場合はフォールバックタイトルを使用
+        return fallbackTitle;
+    }
+
+    /**
+     * コンテンツにh1、h2、またはh3タグが含まれているかチェック
+     */
+    hasHeadingTags(content: string): boolean {
+        const h1Match = /<h1[^>]*>/i.test(content);
+        const h2Match = /<h2[^>]*>/i.test(content);
+        const h3Match = /<h3[^>]*>/i.test(content);
+        return h1Match || h2Match || h3Match;
+    }
+
+    /**
      * 読み込んだEPUBの情報をテキストファイルとして保存
      */
     async saveChaptersToFiles(outputDir: string): Promise<void> {
@@ -312,15 +367,40 @@ export class EpubReader {
             fs.mkdirSync(bookDir, {recursive: true});
         }
 
+        // メタデータを保存するための配列
+        const chaptersMetadata: any[] = [];
+
         // 各チャプターをテキストファイルとして保存
         for (const chapter of chapters) {
-            const filename = `${String(chapter.order).padStart(2, '0')}-${chapter.title.replace(/[\\/:*?"<>|]/g, '_')}.txt`;
+            // コンテンツから実際のタイトルを抽出
+            const extractedTitle = this.extractTitleFromContent(chapter.content, chapter.title);
+            
+            // ファイル名用にタイトルをサニタイズ
+            const sanitizedTitle = extractedTitle.replace(/[\\/:*?"<>|]/g, '_');
+            const filename = `${String(chapter.order).padStart(2, '0')}-${sanitizedTitle}.txt`;
             const filePath = path.join(bookDir, filename);
 
             fs.writeFileSync(filePath, chapter.content, 'utf8');
-            console.log(`チャプター "${chapter.title}" をファイルに保存しました: ${filePath}`);
+            console.log(`チャプター "${extractedTitle}" をファイルに保存しました: ${filePath}`);
+
+            // メタデータを記録
+            chaptersMetadata.push({
+                order: chapter.order,
+                fileName: filename,
+                originalTitle: chapter.title,
+                extractedTitle: extractedTitle
+            });
         }
 
+        // メタデータをJSONファイルとして保存
+        const metadataPath = path.join(bookDir, 'chapters-metadata.json');
+        fs.writeFileSync(metadataPath, JSON.stringify({
+            bookTitle: this.getMetadata().title,
+            chaptersCount: chapters.length,
+            chapters: chaptersMetadata
+        }, null, 2), 'utf8');
+
         console.log(`全チャプターを ${bookDir} に保存しました`);
+        console.log(`メタデータを ${metadataPath} に保存しました`);
     }
 }
