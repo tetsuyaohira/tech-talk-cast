@@ -38,10 +38,10 @@ export const defaultConfig: AppConfig = {
         model: process.env.OPENAI_MODEL || 'gpt-3.5-turbo'
     },
     podcast: {
-        baseUrl: process.env.PODCAST_BASE_URL || 'https://your-bucket.s3.ap-northeast-1.amazonaws.com',
+        baseUrl: process.env.PODCAST_BASE_URL || 'https://tech-talk-cast.s3.ap-northeast-1.amazonaws.com',
         author: process.env.PODCAST_AUTHOR || 'TechTalkCast',
         category: process.env.PODCAST_CATEGORY || 'Technology',
-        imageUrl: process.env.PODCAST_IMAGE_URL
+        imageUrl: process.env.PODCAST_IMAGE_URL || 'https://tech-talk-cast.s3.ap-northeast-1.amazonaws.com/images/podcast-cover.jpg'
     }
 };
 
