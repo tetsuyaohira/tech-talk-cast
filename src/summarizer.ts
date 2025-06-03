@@ -12,9 +12,9 @@ interface SummaryOptions {
 
 export class Summarizer {
     private apiKey: string;
-    private defaultModel = 'gpt-4o';
+    private defaultModel = 'gpt-4.1-mini';
     private defaultTemperature = 0.7;
-    private defaultMaxLength = 40000;
+    private defaultMaxLength = 500000; // GPT-4.1 mini: 30万トークン推奨 ≈ 50万文字
 
     constructor() {
         // 環境変数からAPIキーを取得
@@ -72,7 +72,9 @@ export class Summarizer {
 - 初めの章なら本全体の概要を含め、最後の章なら全体のまとめを含めてください
 - 「さて」だけでなく、「続いては」「次に」「それでは」など、様々な接続詞を使って単調にならないようにしてください
 - 一般のエンジニアが聞いて理解できるようにしてください（専門用語は補足 or 言い換えOK）
-- ソースコードやURLが含まれていた場合は、読み上げに適した表現に言い換えてください
+- **ソースコードは絶対に出力しないでください**（コードブロックや具体的なコードは一切禁止）
+- コードの説明が必要な場合は「このコードは〜という処理をしている」のように概念的に説明してください
+- URLが含まれていた場合は、読み上げに適した表現に言い換えてください
 - 難解な文は、シンプルに分解してください
 - 音声で聞いて自然な流れになるように、語順や文の切り方を工夫してください
 
@@ -88,7 +90,7 @@ export class Summarizer {
                         }
                     ],
                     temperature: temperature,
-                    max_tokens: 4096
+                    max_tokens: 16000
                 },
                 {
                     headers: {
@@ -157,7 +159,9 @@ export class Summarizer {
 - 初めの章なら本全体の概要を含め、最後の章なら全体のまとめを含めてください
 - 「さて」だけでなく、「続いては」「次に」「それでは」など、様々な接続詞を使って単調にならないようにしてください
 - 一般のエンジニアが聞いて理解できるようにしてください（専門用語は補足 or 言い換えOK）
-- ソースコードやURLが含まれていた場合は、読み上げに適した表現に言い換えてください
+- **ソースコードは絶対に出力しないでください**（コードブロックや具体的なコードは一切禁止）
+- コードの説明が必要な場合は「このコードは〜という処理をしている」のように概念的に説明してください
+- URLが含まれていた場合は、読み上げに適した表現に言い換えてください
 - 難解な文は、シンプルに分解してください
 - 音声で聞いて自然な流れになるように、語順や文の切り方を工夫してください
 
@@ -198,7 +202,7 @@ ${chunkIndex > 0 ? `### 重要な注意事項：
                     model: model,
                     messages: messages,
                     temperature: temperature,
-                    max_tokens: 4096
+                    max_tokens: 16000
                 },
                 {
                     headers: {
