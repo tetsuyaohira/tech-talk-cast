@@ -6,7 +6,7 @@ import {EpubReader} from './epubReader';
 import {FileManager} from './fileManager';
 import {config, updateConfig} from './config';
 import {Summarizer} from './summarizer';
-import {SpeechSynthesizer} from './speechSynthesizer';
+import {SpeechSynthesizer, ChapterInfo} from './speechSynthesizer';
 import {generatePodcastRSS} from './rssGenerator';
 
 // 環境変数をロード
@@ -98,10 +98,148 @@ async function main() {
         const shouldSummarize = !args.includes('--no-gpt');
         const shouldSynthesize = !args.includes('--no-speech');
         const shouldGenerateRSS = !args.includes('--no-rss');
+        const combineOnly = args.includes('--combine-only');
 
         // 要約テキスト保存先
         const narratedDir = path.join(config.outputDir, `${epubReader.getFileName()}_narrated`);
         let processedFiles: string[] = [];
+
+        // --combine-onlyの場合、既存の音声ファイルから結合のみ実行
+        if (combineOnly) {
+            console.log(chalk.blue('\n--combine-only モード: 既存の音声ファイルを結合します'));
+            
+            const audioDir = path.join(config.outputDir, `${epubReader.getFileName()}_audio`);
+            
+            // 音声ファイルディレクトリの存在確認
+            if (!fs.existsSync(audioDir)) {
+                console.error(chalk.red('エラー: 音声ファイルディレクトリが見つかりません'));
+                console.log(`期待されるパス: ${audioDir}`);
+                process.exit(1);
+            }
+            
+            // 既存のMP3ファイルを取得
+            const audioFiles = FileManager.getFilesWithExtension(audioDir, '.mp3');
+            
+            if (audioFiles.length === 0) {
+                console.error(chalk.red('エラー: MP3ファイルが見つかりません'));
+                process.exit(1);
+            }
+            
+            console.log(chalk.green(`${audioFiles.length}個の音声ファイルが見つかりました`));
+            
+            // 音声合成インスタンスを作成
+            const synthesizer = new SpeechSynthesizer(
+                config.speech.voice,
+                config.speech.rate
+            );
+            
+            // チャプター情報を再構築（音声ファイルから長さを取得）
+            const chapters: ChapterInfo[] = [];
+            let currentStartTime = 0;
+            
+            console.log(chalk.blue('\nチャプター情報を再構築中...'));
+            
+            for (let i = 0; i < audioFiles.length; i++) {
+                const audioFile = audioFiles[i];
+                const fileName = path.basename(audioFile, '.mp3');
+                
+                // 音声ファイルの長さを取得
+                const duration = await synthesizer.getAudioDuration(audioFile);
+                
+                // チャプターのタイトルを抽出（narrated_と番号部分を除去）
+                const cleanFileName = fileName.replace(/^narrated_/, '');
+                const titleMatch = cleanFileName.match(/^\d+-(.+)$/);
+                const title = titleMatch ? titleMatch[1] : cleanFileName;
+                
+                chapters.push({
+                    title: title,
+                    fileName: fileName,
+                    startTime: currentStartTime,
+                    duration: duration
+                });
+                
+                // 次のチャプターの開始時間を計算
+                if (i < audioFiles.length - 1) {
+                    currentStartTime += duration + 1.0;
+                } else {
+                    currentStartTime += duration;
+                }
+            }
+            
+            // テキストファイルのパスを取得（narratedまたは元のテキスト）
+            let textFiles: string[] = [];
+            if (fs.existsSync(narratedDir)) {
+                textFiles = FileManager.getFilesWithExtension(narratedDir, '.txt');
+            }
+            if (textFiles.length === 0) {
+                textFiles = validFiles;
+            }
+            
+            // 結合音声ファイルを生成
+            console.log(chalk.blue('\n全チャプターを結合した音声ファイルを生成中...'));
+            
+            const combinedAudioPath = path.join(audioDir, `${epubReader.getFileName()}_完全版.m4a`);
+            await synthesizer.synthesizeCombined(textFiles, combinedAudioPath, chapters);
+            
+            console.log(chalk.green(`\n結合音声ファイルを生成しました: ${combinedAudioPath}`));
+            console.log(chalk.yellow('チャプター情報付きM4A形式で出力されました'));
+            
+            // ファイルサイズを表示
+            const fileSize = FileManager.formatSize(
+                fs.statSync(combinedAudioPath).size
+            );
+            console.log(`ファイルサイズ: ${fileSize}`);
+            
+            // チャプター情報を表示
+            if (chapters.length > 0) {
+                console.log(chalk.cyan('\n=== チャプター情報 ==='));
+                chapters.forEach((chapter, index) => {
+                    const startTime = new Date(chapter.startTime * 1000).toISOString().substr(11, 8);
+                    console.log(`${index + 1}. ${chapter.title} (${startTime}～)`);
+                });
+            }
+            
+            // RSS生成（--no-rssでない場合）
+            if (!args.includes('--no-rss')) {
+                console.log(chalk.blue('\n個別RSSフィードを生成中...'));
+                
+                try {
+                    // 完全版の総時間を計算
+                    const totalDuration = chapters.reduce((sum, ch) => sum + ch.duration, 0) + (chapters.length - 1);
+                    const hours = Math.floor(totalDuration / 3600);
+                    const minutes = Math.floor((totalDuration % 3600) / 60);
+                    const seconds = Math.floor(totalDuration % 60);
+                    const durationStr = `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+                    
+                    const metadata = epubReader.getMetadata();
+                    const rssPath = await generatePodcastRSS(
+                        epubReader.getFileName(),
+                        combinedAudioPath,
+                        config.podcast.baseUrl,
+                        {
+                            author: metadata.creator || config.podcast.author,
+                            description: `技術書「${metadata.title}」をポッドキャスト形式で配信`,
+                            category: config.podcast.category,
+                            imageUrl: config.podcast.imageUrl,
+                            duration: durationStr
+                        }
+                    );
+
+                    console.log(chalk.green('\n個別RSSフィードの生成が完了しました！'));
+                    console.log(chalk.magenta('\n📱 ポッドキャスト配信の手順:'));
+                    console.log('1. 完全版音声ファイル(.m4a)をS3にアップロード');
+                    console.log('2. 個別RSSの<item>要素を配信用podcast.xmlにコピー');
+                    console.log('3. 統合されたpodcast.xmlをS3にアップロード');
+                    console.log('4. RSSのURLをポッドキャストアプリに登録');
+                    
+                } catch (error) {
+                    console.log(chalk.yellow(`RSS生成をスキップしました: ${error}`));
+                }
+            }
+            
+            console.log(chalk.green('\n処理が完了しました'));
+            return;
+        }
 
         // ChatGPTによるテキスト変換
         if (shouldSummarize) {
@@ -186,57 +324,48 @@ async function main() {
                         console.log(`${index + 1}. ${chapter.title} (${startTime}～)`);
                     });
                 }
-            }
-        } else {
-            console.log(chalk.yellow('\n音声合成はスキップされました'));
-        }
-
-        // RSSフィード生成処理
-        if (shouldGenerateRSS) {
-            const audioDir = path.join(config.outputDir, `${epubReader.getFileName()}_audio`);
-            
-            // 音声ファイルが存在するかチェック
-            if (fs.existsSync(audioDir)) {
-                const mp3Files = fs.readdirSync(audioDir).filter(file => file.endsWith('.mp3'));
                 
-                if (mp3Files.length > 0) {
-                    console.log(chalk.blue('\nRSSフィードを生成中...'));
+                // RSS生成（完全版生成後）
+                if (shouldGenerateRSS) {
+                    console.log(chalk.blue('\n個別RSSフィードを生成中...'));
                     
                     try {
+                        // 完全版の総時間を計算
+                        const totalDuration = chapters.reduce((sum, ch) => sum + ch.duration, 0) + (chapters.length - 1);
+                        const hours = Math.floor(totalDuration / 3600);
+                        const minutes = Math.floor((totalDuration % 3600) / 60);
+                        const seconds = Math.floor(totalDuration % 60);
+                        const durationStr = `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+                        
                         const rssPath = await generatePodcastRSS(
                             epubReader.getFileName(),
-                            config.outputDir,
+                            combinedAudioPath,
                             config.podcast.baseUrl,
                             {
                                 author: metadata.creator || config.podcast.author,
                                 description: `技術書「${metadata.title}」をポッドキャスト形式で配信`,
                                 category: config.podcast.category,
-                                imageUrl: config.podcast.imageUrl
+                                imageUrl: config.podcast.imageUrl,
+                                duration: durationStr
                             }
                         );
 
-                        console.log(chalk.green('\nRSSフィードの生成が完了しました！'));
+                        console.log(chalk.green('\n個別RSSフィードの生成が完了しました！'));
                         console.log(chalk.magenta('\n📱 ポッドキャスト配信の手順:'));
-                        console.log('1. 音声ファイル(.mp3)をS3にアップロード');
-                        console.log('2. 生成されたRSSファイルをS3にアップロード');
-                        console.log('3. RSSのURLをポッドキャストアプリに登録');
-                        console.log(chalk.blue(`\nRSSファイル: ${path.basename(rssPath)}`));
+                        console.log('1. 完全版音声ファイル(.m4a)をS3にアップロード');
+                        console.log('2. 個別RSSの<item>要素を配信用podcast.xmlにコピー');
+                        console.log('3. 統合されたpodcast.xmlをS3にアップロード');
+                        console.log('4. RSSのURLをポッドキャストアプリに登録');
                         
                     } catch (error) {
                         console.log(chalk.yellow(`RSS生成をスキップしました: ${error}`));
                     }
-                } else {
-                    console.log(chalk.yellow('\nMP3ファイルが見つからないため、RSS生成をスキップしました'));
-                    console.log(chalk.blue('まずはmp3ファイルに変換してください:'));
-                    console.log(`cd ${audioDir}`);
-                    console.log('for f in *.aiff; do ffmpeg -i "$f" -codec:a libmp3lame -b:a 192k "${f%.aiff}.mp3"; done');
                 }
-            } else {
-                console.log(chalk.yellow('\n音声ファイルディレクトリが見つからないため、RSS生成をスキップしました'));
             }
         } else {
-            console.log(chalk.yellow('\nRSS生成はスキップされました'));
+            console.log(chalk.yellow('\n音声合成はスキップされました'));
         }
+
 
         console.log(chalk.green('\n処理が完了しました'));
         console.log(`抽出済みテキストの保存先: ${bookDir}`);

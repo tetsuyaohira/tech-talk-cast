@@ -176,9 +176,10 @@ export class SpeechSynthesizer {
                 // 音声ファイルの長さを取得
                 const duration = await this.getAudioDuration(outputFile);
 
-                // チャプターのタイトルを抽出（ファイル名から番号部分を除去）
-                const titleMatch = fileName.match(/^\d+-(.+)$/);
-                const title = titleMatch ? titleMatch[1] : fileName;
+                // チャプターのタイトルを抽出（ファイル名から番号部分とnarrated_を除去）
+                const cleanFileName = fileName.replace(/^narrated_/, '');
+                const titleMatch = cleanFileName.match(/^\d+-(.+)$/);
+                const title = titleMatch ? titleMatch[1] : cleanFileName;
 
                 // チャプター情報を記録
                 chapters.push({

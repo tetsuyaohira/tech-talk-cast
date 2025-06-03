@@ -77,68 +77,33 @@ export class RSSGenerator {
     }
 
     /**
-     * 音声ファイルディレクトリからエピソード情報を生成
+     * 完全版ファイルからエピソード情報を生成（本単位）
      */
-    async createEpisodesFromAudioDir(audioDir: string, bookName: string): Promise<PodcastEpisode[]> {
-        const episodes: PodcastEpisode[] = [];
-
+    async createEpisodeFromCompleteFile(
+        completeFilePath: string, 
+        bookName: string,
+        duration?: string
+    ): Promise<PodcastEpisode | null> {
         try {
-            const files = fs.readdirSync(audioDir);
-            const mp3Files = files.filter(file => file.endsWith('.mp3'));
-
-            // 完全版ファイルを最初に追加
-            const completeFile = mp3Files.find(file => file.includes('完全版'));
-            if (completeFile) {
-                const stats = fs.statSync(path.join(audioDir, completeFile));
-                episodes.push({
-                    title: `${bookName} - 完全版`,
-                    description: `「${bookName}」の全章を通して聞ける完全版です。`,
-                    audioUrl: `${this.baseUrl}/audio/${this.sanitizeFileName(bookName)}/${completeFile}`,
-                    pubDate: new Date().toUTCString(),
-                    fileSize: stats.size,
-                    duration: await this.getAudioDuration(path.join(audioDir, completeFile)),
-                    chapterNumber: 0
-                });
+            if (!fs.existsSync(completeFilePath)) {
+                console.error(chalk.red(`完全版ファイルが見つかりません: ${completeFilePath}`));
+                return null;
             }
 
-            // チャプター別ファイルを追加
-            const chapterFiles = mp3Files
-                .filter(file => !file.includes('完全版'))
-                .sort((a, b) => {
-                    const numA = this.extractChapterNumber(a);
-                    const numB = this.extractChapterNumber(b);
-                    return numA - numB;
-                });
-
-            // 総チャプター数を取得
-            const totalChapters = chapterFiles.length;
-
-            for (const file of chapterFiles) {
-                const chapterMatch = file.match(/(?:narrated_)?(\d+)-(.+)\.mp3$/);
-                if (chapterMatch) {
-                    const [, chapterNum, chapterName] = chapterMatch;
-                    const stats = fs.statSync(path.join(audioDir, file));
-                    
-                    // 第1章を最も古く、最終章を新しくする
-                    // 完全版より古い日付にするため、totalChapters + 1から引く
-                    const daysAgo = totalChapters - parseInt(chapterNum) + 2;
-                    
-                    episodes.push({
-                        title: `第${chapterNum}章: ${chapterName.replace(/_/g, ' ')}`,
-                        description: `「${bookName}」第${chapterNum}章の内容をポッドキャスト形式でお届けします。`,
-                        audioUrl: `${this.baseUrl}/audio/${this.sanitizeFileName(bookName)}/${file}`,
-                        pubDate: new Date(Date.now() - daysAgo * 24 * 60 * 60 * 1000).toUTCString(),
-                        fileSize: stats.size,
-                        duration: await this.getAudioDuration(path.join(audioDir, file)),
-                        chapterNumber: parseInt(chapterNum)
-                    });
-                }
-            }
-
-            return episodes;
+            const stats = fs.statSync(completeFilePath);
+            const fileName = path.basename(completeFilePath);
+            
+            return {
+                title: bookName,
+                description: `技術書「${bookName}」の完全版。全章を通して聞くことができます。`,
+                audioUrl: `${this.baseUrl}/audio/${this.sanitizeFileName(bookName)}/${fileName}`,
+                pubDate: new Date().toUTCString(),
+                fileSize: stats.size,
+                duration: duration || await this.getAudioDuration(completeFilePath)
+            };
         } catch (error) {
-            console.error(chalk.red(`音声ディレクトリの読み込みエラー: ${error}`));
-            return [];
+            console.error(chalk.red(`エピソード情報の生成エラー: ${error}`));
+            return null;
         }
     }
 
@@ -181,51 +146,57 @@ export class RSSGenerator {
     }
 
     /**
-     * 書籍からポッドキャストを生成
+     * 完全版ファイルから個別RSSを生成（本単位）
      */
-    async generatePodcastFromBook(
+    async generateIndividualRSS(
         bookName: string, 
-        audioDir: string, 
+        completeFilePath: string, 
         outputDir: string,
         options: {
             author?: string;
             description?: string;
             category?: string;
             imageUrl?: string;
+            duration?: string;
         } = {}
     ): Promise<string> {
         try {
-            // エピソード情報を生成
-            const episodes = await this.createEpisodesFromAudioDir(audioDir, bookName);
+            // エピソード情報を生成（1エピソードのみ）
+            const episode = await this.createEpisodeFromCompleteFile(completeFilePath, bookName, options.duration);
 
-            if (episodes.length === 0) {
-                throw new Error('音声ファイルが見つかりません');
+            if (!episode) {
+                throw new Error('エピソード情報の生成に失敗しました');
             }
 
-            // ポッドキャスト情報を作成
+            // ポッドキャスト情報を作成（個別RSS用にコメント付き）
             const podcastInfo: PodcastInfo = {
-                title: `TechTalkCast: ${bookName}`,
-                description: options.description || `技術書「${bookName}」をポッドキャスト形式で配信。通勤・通学のお供にどうぞ！`,
+                title: 'TechTalkCast',
+                description: '技術書をポッドキャスト形式で配信。通勤・通学のお供にどうぞ！',
                 author: options.author || 'TechTalkCast',
                 category: options.category || 'Technology',
                 language: 'ja',
                 link: this.baseUrl,
                 imageUrl: options.imageUrl,
-                episodes: episodes
+                episodes: [episode]
             };
 
-            // RSSを生成
-            const rssContent = this.generateRSS(podcastInfo);
+            // 個別RSS用のテンプレートを生成
+            const rssContent = `<?xml version="1.0" encoding="UTF-8"?>
+<!-- 
+  このファイルは「${bookName}」の個別RSSです。
+  配信用のpodcast.xmlに統合する場合は、以下の<item>要素をコピーしてください。
+-->
+${this.generateRSS(podcastInfo)}`;
             
-            // RSSファイルを保存
-            const rssFileName = `${this.sanitizeFileName(bookName)}-podcast.xml`;
-            const rssPath = path.join(outputDir, rssFileName);
+            // RSSファイルを保存（音声ファイルと同じディレクトリ）
+            const audioDir = path.dirname(completeFilePath);
+            const rssFileName = `${bookName}.rss.xml`;
+            const rssPath = path.join(audioDir, rssFileName);
             
             fs.writeFileSync(rssPath, rssContent, 'utf-8');
             
-            console.log(chalk.green(`📻 RSSフィードを生成しました: ${rssPath}`));
-            console.log(chalk.blue(`📱 配信URL: ${this.baseUrl}/feeds/${rssFileName}`));
-            console.log(chalk.blue(`🎧 エピソード数: ${episodes.length}`));
+            console.log(chalk.green(`📻 個別RSSフィードを生成しました: ${rssPath}`));
+            console.log(chalk.yellow(`📝 配信用podcast.xmlに統合する際は、<item>要素をコピーしてください`));
 
             return rssPath;
         } catch (error) {
@@ -236,25 +207,25 @@ export class RSSGenerator {
 }
 
 /**
- * RSS生成のメイン関数
+ * 完全版ファイルから個別RSSを生成（本単位）
  */
 export async function generatePodcastRSS(
     bookName: string, 
-    outputDir: string, 
+    completeFilePath: string, 
     baseUrl: string,
     options?: {
         author?: string;
         description?: string;
         category?: string;
         imageUrl?: string;
+        duration?: string;
     }
 ): Promise<string> {
-    const audioDir = path.join(outputDir, `${bookName}_audio`);
-    
-    if (!fs.existsSync(audioDir)) {
-        throw new Error(`音声ディレクトリが見つかりません: ${audioDir}`);
+    if (!fs.existsSync(completeFilePath)) {
+        throw new Error(`完全版ファイルが見つかりません: ${completeFilePath}`);
     }
 
+    const outputDir = path.dirname(completeFilePath);
     const rssGenerator = new RSSGenerator(baseUrl);
-    return await rssGenerator.generatePodcastFromBook(bookName, audioDir, outputDir, options);
+    return await rssGenerator.generateIndividualRSS(bookName, completeFilePath, outputDir, options);
 }
