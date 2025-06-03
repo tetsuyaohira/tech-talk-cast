@@ -14,7 +14,7 @@ export class Summarizer {
     private apiKey: string;
     private defaultModel = 'gpt-4o';
     private defaultTemperature = 0.7;
-    private defaultMaxLength = 16000;
+    private defaultMaxLength = 40000;
 
     constructor() {
         // 環境変数からAPIキーを取得
