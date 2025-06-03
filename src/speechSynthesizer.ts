@@ -9,6 +9,16 @@ import { textFormatter } from './textFormatter';
 const execPromise = util.promisify(exec);
 
 /**
+ * チャプター情報の型定義
+ */
+export interface ChapterInfo {
+    title: string;
+    fileName: string;
+    startTime: number;  // 秒単位
+    duration: number;   // 秒単位
+}
+
+/**
  * 音声合成を扱うクラス
  * macOSのsayコマンドを使用して文字列から音声ファイルを生成
  */
@@ -57,8 +67,8 @@ export class SpeechSynthesizer {
      */
     async synthesize(text: string, outputPath: string): Promise<void> {
         const tempTextFile = `${outputPath}.temp.txt`;
-        const tempAiffFile = outputPath;
-        const outputFile = outputPath.replace(/\.aiff$/, '.mp3');
+        const tempAiffFile = outputPath.replace(/\.(mp3|m4a)$/, '.temp.aiff');
+        const outputFile = outputPath;
         
         try {
             // ディレクトリが存在しない場合は作成
@@ -111,22 +121,39 @@ export class SpeechSynthesizer {
     }
 
     /**
+     * 音声ファイルの長さを取得（秒単位）
+     */
+    async getAudioDuration(filePath: string): Promise<number> {
+        try {
+            const command = `ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "${filePath}"`;
+            const { stdout } = await execPromise(command);
+            return parseFloat(stdout.trim());
+        } catch (error) {
+            console.error(`音声ファイルの長さ取得に失敗しました: ${filePath}`, error);
+            return 0;
+        }
+    }
+
+    /**
      * 指定されたファイルリストを音声合成
      * @param inputFiles 入力ファイルパスの配列
      * @param outputDir 出力音声ファイルのディレクトリ
      * @param fileExtension 出力ファイルの拡張子 (デフォルト: .aiff)
+     * @returns 生成された音声ファイルのパスとチャプター情報
      */
     async synthesizeFiles(
         inputFiles: string[],
         outputDir: string,
         fileExtension: string = '.aiff'
-    ): Promise<string[]> {
+    ): Promise<{ audioFiles: string[], chapters: ChapterInfo[] }> {
         // 出力ディレクトリが存在しない場合は作成
         if (!fs.existsSync(outputDir)) {
             fs.mkdirSync(outputDir, {recursive: true});
         }
 
         const outputFiles: string[] = [];
+        const chapters: ChapterInfo[] = [];
+        let currentStartTime = 0;
 
         console.log(`${inputFiles.length}個のファイルを音声に変換します...`);
 
@@ -146,12 +173,35 @@ export class SpeechSynthesizer {
                 await this.synthesize(text, outputFile);
                 outputFiles.push(outputFile);
 
+                // 音声ファイルの長さを取得
+                const duration = await this.getAudioDuration(outputFile);
+
+                // チャプターのタイトルを抽出（ファイル名から番号部分を除去）
+                const titleMatch = fileName.match(/^\d+-(.+)$/);
+                const title = titleMatch ? titleMatch[1] : fileName;
+
+                // チャプター情報を記録
+                chapters.push({
+                    title: title,
+                    fileName: fileName,
+                    startTime: currentStartTime,
+                    duration: duration
+                });
+
+                // 次のチャプターの開始時間を計算
+                // 最後のチャプター以外は1秒のポーズを追加
+                if (i < inputFiles.length - 1) {
+                    currentStartTime += duration + 1.0;  // チャプター間の1秒ポーズを考慮
+                } else {
+                    currentStartTime += duration;  // 最後のチャプターの後はポーズなし
+                }
+
             } catch (error) {
                 console.error(`ファイル "${inputFile}" の音声合成に失敗しました:`, error);
             }
         }
 
-        return outputFiles;
+        return { audioFiles: outputFiles, chapters };
     }
 
     /**
@@ -237,8 +287,9 @@ export class SpeechSynthesizer {
      * 複数のテキストファイルを結合して一つの音声ファイルにする
      * @param inputFiles 入力テキストファイルのパスの配列
      * @param outputFile 出力音声ファイルのパス
+     * @param chapters チャプター情報の配列（オプション）
      */
-    async synthesizeCombined(inputFiles: string[], outputFile: string): Promise<void> {
+    async synthesizeCombined(inputFiles: string[], outputFile: string, chapters?: ChapterInfo[]): Promise<void> {
         try {
             // 一時的に結合したテキストファイルを作成
             const tempTextFile = `${outputFile}.temp.txt`;
@@ -260,11 +311,41 @@ export class SpeechSynthesizer {
 
             fs.writeFileSync(tempTextFile, formattedText, 'utf8');
 
-            // sayコマンドで音声ファイルを生成（-yオプションで上書き確認をスキップ）
-            const command = `say -r ${this.rate} -f "${tempTextFile}" -o temp.aiff && ffmpeg -y -i temp.aiff -codec:a libmp3lame -b:a 192k "${outputFile}" && rm temp.aiff`;
-            // const command = `say -v "${this.voice}" -r ${this.rate} -f "${tempTextFile}" -o "${outputFile}"`;
+            // 出力形式を判定（MP3またはM4A）
+            const isM4A = outputFile.endsWith('.m4a');
+            let command: string;
+
+            if (isM4A && chapters && chapters.length > 0) {
+                // M4A形式でチャプター情報を含める場合
+                const tempAiffFile = 'temp.aiff';
+                
+                // チャプターメタデータファイルを作成
+                const metadataFile = `${outputFile}.metadata.txt`;
+                let metadataContent = ';FFMETADATA1\n';
+                
+                chapters.forEach((chapter, index) => {
+                    const startMs = Math.floor(chapter.startTime * 1000);
+                    const endMs = Math.floor((chapter.startTime + chapter.duration) * 1000);
+                    metadataContent += `[CHAPTER]\n`;
+                    metadataContent += `TIMEBASE=1/1000\n`;
+                    metadataContent += `START=${startMs}\n`;
+                    metadataContent += `END=${endMs}\n`;
+                    metadataContent += `title=${chapter.title}\n\n`;
+                });
+                
+                fs.writeFileSync(metadataFile, metadataContent, 'utf8');
+                
+                // M4A with chapters
+                command = `say -r ${this.rate} -f "${tempTextFile}" -o "${tempAiffFile}" && ffmpeg -y -i "${tempAiffFile}" -i "${metadataFile}" -map_metadata 1 -codec:a aac -b:a 192k -f mp4 "${outputFile}" && rm "${tempAiffFile}" "${metadataFile}"`;
+            } else {
+                // MP3形式（チャプターなし）
+                command = `say -r ${this.rate} -f "${tempTextFile}" -o temp.aiff && ffmpeg -y -i temp.aiff -codec:a libmp3lame -b:a 192k "${outputFile}" && rm temp.aiff`;
+            }
 
             console.log(`結合した音声ファイルを生成中... (${path.basename(outputFile)})`);
+            if (chapters && chapters.length > 0) {
+                console.log(`チャプター数: ${chapters.length}`);
+            }
             await execPromise(command);
 
             // 一時ファイルを削除

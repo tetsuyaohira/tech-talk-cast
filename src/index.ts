@@ -152,7 +152,9 @@ async function main() {
             }
 
             // 音声ファイルを生成
-            const audioFiles = await synthesizer.synthesizeFiles(sourceFiles, audioDir, '.mp3');
+            const result = await synthesizer.synthesizeFiles(sourceFiles, audioDir, '.mp3');
+            const audioFiles = result.audioFiles;
+            const chapters = result.chapters;
 
             console.log(chalk.green(`\n${audioFiles.length}個の音声ファイルを生成しました`));
             console.log(`音声ファイルの保存先: ${audioDir}`);
@@ -161,19 +163,29 @@ async function main() {
             if (audioFiles.length > 0 && !args.includes('--no-combine')) {
                 console.log(chalk.blue('\n全チャプターを結合した音声ファイルを生成中...'));
 
-                // 結合した音声ファイルのパス
-                const combinedAudioPath = path.join(audioDir, `${epubReader.getFileName()}_完全版.mp3`);
+                // 結合した音声ファイルのパス（M4A形式でチャプター対応）
+                const combinedAudioPath = path.join(audioDir, `${epubReader.getFileName()}_完全版.m4a`);
 
-                // 結合音声ファイルを生成
-                await synthesizer.synthesizeCombined(sourceFiles, combinedAudioPath);
+                // 結合音声ファイルを生成（チャプター情報付き）
+                await synthesizer.synthesizeCombined(sourceFiles, combinedAudioPath, chapters);
 
                 console.log(chalk.green(`\n結合音声ファイルを生成しました: ${combinedAudioPath}`));
+                console.log(chalk.yellow('チャプター情報付きM4A形式で出力されました'));
 
                 // ファイルサイズを表示
                 const fileSize = FileManager.formatSize(
                     fs.statSync(combinedAudioPath).size
                 );
                 console.log(`ファイルサイズ: ${fileSize}`);
+                
+                // チャプター情報を表示
+                if (chapters.length > 0) {
+                    console.log(chalk.cyan('\n=== チャプター情報 ==='));
+                    chapters.forEach((chapter, index) => {
+                        const startTime = new Date(chapter.startTime * 1000).toISOString().substr(11, 8);
+                        console.log(`${index + 1}. ${chapter.title} (${startTime}～)`);
+                    });
+                }
             }
         } else {
             console.log(chalk.yellow('\n音声合成はスキップされました'));
