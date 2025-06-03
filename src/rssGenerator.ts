@@ -96,7 +96,7 @@ export class RSSGenerator {
             return {
                 title: bookName,
                 description: `技術書「${bookName}」の完全版。全章を通して聞くことができます。`,
-                audioUrl: `${this.baseUrl}/audio/${this.sanitizeFileName(bookName)}/${fileName}`,
+                audioUrl: `${this.baseUrl}/audio/${fileName}`,
                 pubDate: new Date().toUTCString(),
                 fileSize: stats.size,
                 duration: duration || await this.getAudioDuration(completeFilePath)
