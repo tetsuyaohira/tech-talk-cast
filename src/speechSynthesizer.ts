@@ -336,11 +336,16 @@ export class SpeechSynthesizer {
                 
                 fs.writeFileSync(metadataFile, metadataContent, 'utf8');
                 
+                // Log chapter metadata for debugging
+                console.log(`チャプターメタデータファイルを作成しました: ${metadataFile}`);
+                console.log(`チャプター数: ${chapters.length}`);
+                
                 // M4A with chapters
-                command = `say -r ${this.rate} -f "${tempTextFile}" -o "${tempAiffFile}" && ffmpeg -y -i "${tempAiffFile}" -i "${metadataFile}" -map_metadata 1 -codec:a aac -b:a 192k -f mp4 "${outputFile}" && rm "${tempAiffFile}" "${metadataFile}"`;
+                // Use MP4Box-style chapter format for better compatibility
+                command = `say -r ${this.rate} -f "${tempTextFile}" -o "${tempAiffFile}" && ffmpeg -y -i "${tempAiffFile}" -i "${metadataFile}" -map 0 -map_metadata 1 -codec:a aac -b:a 192k -movflags +faststart "${outputFile}" && rm "${tempAiffFile}" "${metadataFile}"`;
             } else {
                 // MP3形式（チャプターなし）
-                command = `say -r ${this.rate} -f "${tempTextFile}" -o temp.aiff && ffmpeg -y -i temp.aiff -codec:a libmp3lame -b:a 192k "${outputFile}" && rm temp.aiff`;
+                command = `say -r ${this.rate} -f "${tempTextFile}" -o "temp.aiff" && ffmpeg -y -i "temp.aiff" -codec:a libmp3lame -b:a 192k "${outputFile}" && rm "temp.aiff"`;
             }
 
             console.log(`結合した音声ファイルを生成中... (${path.basename(outputFile)})`);
@@ -355,6 +360,21 @@ export class SpeechSynthesizer {
             }
 
             console.log(`結合した音声ファイルを生成しました: ${outputFile}`);
+            
+            // Verify chapters were embedded
+            if (isM4A && chapters && chapters.length > 0) {
+                try {
+                    const { stdout } = await execPromise(`ffprobe -show_chapters -print_format json "${outputFile}" 2>/dev/null | grep -c '"id":'`);
+                    const chapterCount = parseInt(stdout.trim());
+                    if (chapterCount > 0) {
+                        console.log(`✅ ${chapterCount}個のチャプターが正常に埋め込まれました`);
+                    } else {
+                        console.log(`⚠️  チャプターの埋め込みに失敗した可能性があります`);
+                    }
+                } catch (error) {
+                    // Ignore verification errors
+                }
+            }
         } catch (error) {
             console.error('結合音声の生成中にエラーが発生しました:', error);
             throw new Error(`結合音声の生成に失敗しました: ${error}`);
