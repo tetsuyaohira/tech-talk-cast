@@ -108,6 +108,108 @@ export class Summarizer {
     }
 
     /**
+     * 文脈を考慮してチャンクを要約
+     */
+    private async summarizeChunkWithContext(
+        chunkText: string, 
+        previousSummary: string,
+        chunkIndex: number,
+        totalChunks: number,
+        options: SummaryOptions = {}
+    ): Promise<string> {
+        if (!this.apiKey) {
+            throw new Error('OPENAI_API_KEYが設定されていません。');
+        }
+
+        // フォーマッターで前処理
+        const formattedText = textFormatter.prepareForSummary(chunkText);
+
+        // オプションの設定
+        const model = options.model || this.defaultModel;
+        const temperature = options.temperature || this.defaultTemperature;
+
+        try {
+            const messages: any[] = [
+                {
+                    role: 'system',
+                    content: `あなたは、技術書を音声用コンテンツに変換するナレーション編集者です。
+
+以下の入力テキストは、技術書の「まえがき」や「章の本文」などです。
+この内容を元に、Podcastでナレーターが読み上げるような、友達に説明する感じの会話調のテキストに変換してください。
+
+### 制約とルール：
+
+- フランクで親しみやすい口調にしてください（例：「〜なんだよね」「って話」など）
+- 一般のエンジニアが聞いて理解できるようにしてください（専門用語は補足 or 言い換えOK）
+- ソースコードやURLが含まれていた場合は、読み上げに適した表現に言い換えてください（読み上げる必要がない場合は説明だけでもOK）
+- 難解な文は、シンプルに分解してください
+- 音声で聞いて自然な流れになるように、語順や文の切り方を工夫してください
+
+${chunkIndex > 0 ? `### 重要な注意事項：
+- これは${totalChunks}個に分割されたテキストの第${chunkIndex + 1}部分です
+- 前の部分からの話の続きとして、自然に繋がるようにしてください
+- 前の部分で説明した内容は「さっき話した〜」のように参照してもOKです
+- 唐突に話が始まらないよう、必要に応じて繋ぎの言葉を入れてください` : ''}
+
+出力は、音声用ナレーションとしてそのまま使える自然な日本語の文章にしてください。
+
+※短くまとめすぎず、話し言葉として自然なボリュームになるようにしてください。
+※内容の厚みや深みを持たせつつ、聞き手が飽きずに聞ける程度の長さを意識してください。
+※例え話や補足を使ってわかりやすく説明しながら、同じ内容を繰り返さず、スッキリ伝えてください。`
+                }
+            ];
+
+            // 前のチャンクの要約がある場合は、文脈として追加
+            if (previousSummary) {
+                messages.push({
+                    role: 'assistant',
+                    content: previousSummary
+                });
+                messages.push({
+                    role: 'user',
+                    content: `前の部分の続きとして、以下のテキストを変換してください：\n\n${formattedText}`
+                });
+            } else {
+                messages.push({
+                    role: 'user',
+                    content: formattedText
+                });
+            }
+
+            const response = await axios.post(
+                'https://api.openai.com/v1/chat/completions',
+                {
+                    model: model,
+                    messages: messages,
+                    temperature: temperature,
+                    max_tokens: 4096
+                },
+                {
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${this.apiKey}`
+                    }
+                }
+            );
+
+            // レスポンスから要約テキストを取得
+            const summary = response.data.choices[0].message.content;
+
+            if (config.debug) {
+                console.log(`チャンク${chunkIndex + 1}のAPIレスポンス:`, JSON.stringify(response.data, null, 2));
+            }
+
+            return summary;
+        } catch (error) {
+            console.error(`チャンク${chunkIndex + 1}の処理中にエラーが発生しました:`, error);
+            if (axios.isAxiosError(error) && error.response) {
+                console.error('APIレスポンス:', error.response.data);
+            }
+            throw new Error(`チャンク${chunkIndex + 1}の要約に失敗しました`);
+        }
+    }
+
+    /**
      * 長いテキストを分割してAPIに送信し、結果を結合
      */
     private async summarizeLongText(text: string, options: SummaryOptions = {}): Promise<string> {
@@ -119,13 +221,22 @@ export class Summarizer {
 
         // 各チャンクを個別に要約
         const summaries: string[] = [];
+        let previousSummary = '';
+        
         for (let i = 0; i < chunks.length; i++) {
             console.log(`チャンク ${i + 1}/${chunks.length} を処理中...`);
-            const chunkSummary = await this.summarizeText(chunks[i], {
-                ...options,
-                maxLength: maxLength
-            });
+            
+            // 前のチャンクの要約を文脈として渡す
+            const chunkSummary = await this.summarizeChunkWithContext(
+                chunks[i], 
+                previousSummary,
+                i,
+                chunks.length,
+                options
+            );
+            
             summaries.push(chunkSummary);
+            previousSummary = chunkSummary; // 次のチャンクのために保存
         }
 
         // 最終的な結合
@@ -133,32 +244,44 @@ export class Summarizer {
     }
 
     /**
-     * テキストを適切なサイズのチャンクに分割
+     * テキストを適切なサイズのチャンクに分割（オーバーラップ付き）
      */
     private splitTextIntoChunks(text: string, maxChunkSize: number): string[] {
         const chunks: string[] = [];
         const paragraphs = text.split(/\n\s*\n/); // 空行で段落を分割
+        const overlapSize = Math.floor(maxChunkSize * 0.1); // 10%のオーバーラップ
 
         let currentChunk = '';
+        let previousParagraph = ''; // オーバーラップ用に前の段落を保持
 
-        for (const paragraph of paragraphs) {
+        for (let i = 0; i < paragraphs.length; i++) {
+            const paragraph = paragraphs[i];
+            
             // 現在のチャンクに段落を追加するとサイズを超える場合
             if (currentChunk.length + paragraph.length + 2 > maxChunkSize) {
                 // 現在のチャンクが空でない場合は追加
                 if (currentChunk.length > 0) {
                     chunks.push(currentChunk);
-                    currentChunk = '';
+                    
+                    // 次のチャンクの開始時に前の段落の一部を含める（オーバーラップ）
+                    if (previousParagraph.length > 0 && previousParagraph.length <= overlapSize) {
+                        currentChunk = previousParagraph + '\n\n';
+                    } else {
+                        currentChunk = '';
+                    }
                 }
 
                 // 段落自体が最大サイズを超える場合は分割
                 if (paragraph.length > maxChunkSize) {
                     const sentences = paragraph.split(/(?<=[.!?。！？])\s+/);
-                    let sentenceChunk = '';
+                    let sentenceChunk = currentChunk; // オーバーラップを維持
 
                     for (const sentence of sentences) {
                         if (sentenceChunk.length + sentence.length + 1 > maxChunkSize) {
                             chunks.push(sentenceChunk);
-                            sentenceChunk = sentence;
+                            // 前の文の最後をオーバーラップとして保持
+                            const lastSentenceMatch = sentenceChunk.match(/[^.!?。！？]+[.!?。！？]\s*$/);
+                            sentenceChunk = lastSentenceMatch ? lastSentenceMatch[0] + ' ' + sentence : sentence;
                         } else {
                             sentenceChunk += (sentenceChunk ? ' ' : '') + sentence;
                         }
@@ -168,12 +291,14 @@ export class Summarizer {
                         currentChunk = sentenceChunk;
                     }
                 } else {
-                    currentChunk = paragraph;
+                    currentChunk += (currentChunk ? '\n\n' : '') + paragraph;
                 }
             } else {
                 // チャンクに段落を追加
                 currentChunk += (currentChunk ? '\n\n' : '') + paragraph;
             }
+            
+            previousParagraph = paragraph;
         }
 
         // 最後のチャンクを追加
