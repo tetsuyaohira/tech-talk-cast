@@ -53,7 +53,7 @@ export class SpeechSynthesizer {
     /**
      * テキストから音声ファイルを生成
      * @param text 読み上げるテキスト
-     * @param outputPath 出力ファイルのパス (.aiff)
+     * @param outputPath 出力ファイルのパス (.mp3)
      */
     async synthesize(text: string, outputPath: string): Promise<void> {
         try {
@@ -74,8 +74,9 @@ export class SpeechSynthesizer {
             fs.writeFileSync(tempTextFile, formattedText, 'utf8');
 
             // sayコマンドを実行して音声ファイルを生成
-            const command = `say -r ${this.rate} -f "${tempTextFile}" -o "${outputPath}"`;
-            // const command = `say -v "${this.voice}" -r ${this.rate} -f "${tempTextFile}" -o "${outputPath}"`;
+            const outputFile = outputPath.replace(/\.aiff$/, '.mp3');
+            const command = `say -r ${this.rate} -f "${tempTextFile}" -o "${outputPath}" && ffmpeg -i "${outputPath}" -codec:a libmp3lame -b:a 192k "${outputFile}" && rm "${outputPath}"`;
+            // const command = `say -v "${this.voice}" -r ${this.rate} -f "${tempTextFile}" -o "${outputPath}" && ffmpeg -i "${outputPath}" -codec:a libmp3lame -b:a 192k "${outputFile}" && rm "${outputPath}"`;
 
             console.log(`音声合成を実行中... (${path.basename(outputPath)})`);
             await execPromise(command);
@@ -199,7 +200,8 @@ export class SpeechSynthesizer {
             fs.writeFileSync(tempTextFile, formattedText, 'utf8');
 
             // sayコマンドで音声ファイルを生成
-            const command = `say -v "${this.voice}" -r ${this.rate} -f "${tempTextFile}" -o "${outputFile}"`;
+            const command = `say -r ${this.rate} -f "${tempTextFile}" -o temp.aiff && ffmpeg -i temp.aiff -codec:a libmp3lame -b:a 192k "${outputFile}" && rm temp.aiff`;
+            // const command = `say -v "${this.voice}" -r ${this.rate} -f "${tempTextFile}" -o "${outputFile}"`;
 
             console.log(`結合した音声ファイルを生成中... (${path.basename(outputFile)})`);
             await execPromise(command);
