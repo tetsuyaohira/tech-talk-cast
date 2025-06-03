@@ -152,7 +152,7 @@ async function main() {
             }
 
             // 音声ファイルを生成
-            const audioFiles = await synthesizer.synthesizeFiles(sourceFiles, audioDir, '.aiff');
+            const audioFiles = await synthesizer.synthesizeFiles(sourceFiles, audioDir, '.mp3');
 
             console.log(chalk.green(`\n${audioFiles.length}個の音声ファイルを生成しました`));
             console.log(`音声ファイルの保存先: ${audioDir}`);
@@ -162,7 +162,7 @@ async function main() {
                 console.log(chalk.blue('\n全チャプターを結合した音声ファイルを生成中...'));
 
                 // 結合した音声ファイルのパス
-                const combinedAudioPath = path.join(audioDir, `${epubReader.getFileName()}_完全版.aiff`);
+                const combinedAudioPath = path.join(audioDir, `${epubReader.getFileName()}_完全版.mp3`);
 
                 // 結合音声ファイルを生成
                 await synthesizer.synthesizeCombined(sourceFiles, combinedAudioPath);
