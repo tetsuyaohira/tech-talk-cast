@@ -16,6 +16,13 @@ export interface AppConfig {
         apiKey: string | undefined;
         model: string;
     };
+    // RSS・ポッドキャスト設定
+    podcast: {
+        baseUrl: string;
+        author: string;
+        category: string;
+        imageUrl?: string;
+    };
 }
 
 // デフォルト設定 (環境変数からの読み込みを含む)
@@ -29,6 +36,12 @@ export const defaultConfig: AppConfig = {
     openai: {
         apiKey: process.env.OPENAI_API_KEY,
         model: process.env.OPENAI_MODEL || 'gpt-3.5-turbo'
+    },
+    podcast: {
+        baseUrl: process.env.PODCAST_BASE_URL || 'https://your-bucket.s3.ap-northeast-1.amazonaws.com',
+        author: process.env.PODCAST_AUTHOR || 'TechTalkCast',
+        category: process.env.PODCAST_CATEGORY || 'Technology',
+        imageUrl: process.env.PODCAST_IMAGE_URL
     }
 };
 

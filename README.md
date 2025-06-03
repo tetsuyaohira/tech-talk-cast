@@ -47,8 +47,16 @@ npm install
 ## 実行方法
 
 ```bash
-npm run dev "./books/ソフトウェアアーキテクチャの基礎.epub"
-npm run dev "./books/ソフトウェアアーキテクチャの基礎.epub" --no-speech --no-gpt
+# 基本的な実行方法（--が必要です）
+npm run dev -- "./books/ソフトウェアアーキテクチャの基礎.epub"
+
+# オプション付きの実行
+npm run dev -- "./books/ソフトウェアアーキテクチャの基礎.epub" --no-gpt
+npm run dev -- "./books/ソフトウェアアーキテクチャの基礎.epub" --no-speech
+npm run dev -- "./books/ソフトウェアアーキテクチャの基礎.epub" --no-gpt --no-speech
+
+# 既存の_narratedフォルダから音声生成のみ行う場合
+npm run dev -- "./books/ソフトウェアアーキテクチャの基礎.epub" --no-gpt
 ```
 
 ## mp3への変換

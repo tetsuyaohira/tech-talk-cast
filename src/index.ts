@@ -7,6 +7,7 @@ import {FileManager} from './fileManager';
 import {config, updateConfig} from './config';
 import {Summarizer} from './summarizer';
 import {SpeechSynthesizer} from './speechSynthesizer';
+import {generatePodcastRSS} from './rssGenerator';
 
 // 環境変数をロード
 dotenv.config();
@@ -73,6 +74,7 @@ async function main() {
         // フラグ設定
         const shouldSummarize = !args.includes('--no-gpt');
         const shouldSynthesize = !args.includes('--no-speech');
+        const shouldGenerateRSS = !args.includes('--no-rss');
 
         // 要約テキスト保存先
         const narratedDir = path.join(config.outputDir, `${epubReader.getFileName()}_narrated`);
@@ -96,54 +98,112 @@ async function main() {
 
         // 音声合成処理
         if (shouldSynthesize) {
-            if (processedFiles.length > 0 || !shouldSummarize) {
-                console.log(chalk.blue('\n音声ファイルを生成中...'));
+            console.log(chalk.blue('\n音声ファイルを生成中...'));
 
-                // 音声合成インスタンスを作成
-                const synthesizer = new SpeechSynthesizer(
-                    config.speech.voice,
-                    config.speech.rate
-                );
+            // 音声合成インスタンスを作成
+            const synthesizer = new SpeechSynthesizer(
+                config.speech.voice,
+                config.speech.rate
+            );
 
-                // 音声ファイルの保存先ディレクトリ
-                const audioDir = path.join(config.outputDir, `${epubReader.getFileName()}_audio`);
+            // 音声ファイルの保存先ディレクトリ
+            const audioDir = path.join(config.outputDir, `${epubReader.getFileName()}_audio`);
 
-                // 音声変換する元ディレクトリを決定
-                // 要約した場合は要約テキスト、そうでない場合は抽出テキストを使用
-                const sourceDir = processedFiles.length > 0 ? narratedDir : extractedDir;
-
-                // 音声ファイルを生成
-                const audioFiles = await synthesizer.synthesizeDirectory(sourceDir, audioDir, '.aiff');
-
-                console.log(chalk.green(`\n${audioFiles.length}個の音声ファイルを生成しました`));
-                console.log(`音声ファイルの保存先: ${audioDir}`);
-
-                // すべてを結合した一つの音声ファイルも生成
-                if (audioFiles.length > 0 && !args.includes('--no-combine')) {
-                    console.log(chalk.blue('\n全チャプターを結合した音声ファイルを生成中...'));
-
-                    // テキストファイルのパスリストを取得
-                    const textFiles = FileManager.getFilesWithExtension(sourceDir, '.txt');
-
-                    // 結合した音声ファイルのパス
-                    const combinedAudioPath = path.join(audioDir, `${epubReader.getFileName()}_完全版.aiff`);
-
-                    // 結合音声ファイルを生成
-                    await synthesizer.synthesizeCombined(textFiles, combinedAudioPath);
-
-                    console.log(chalk.green(`\n結合音声ファイルを生成しました: ${combinedAudioPath}`));
-
-                    // ファイルサイズを表示
-                    const fileSize = FileManager.formatSize(
-                        fs.statSync(combinedAudioPath).size
-                    );
-                    console.log(`ファイルサイズ: ${fileSize}`);
+            // 音声変換する元ディレクトリを決定
+            let sourceDir: string;
+            
+            // --no-gptが指定された場合、_narratedディレクトリが存在すればそれを使用
+            if (!shouldSummarize && fs.existsSync(narratedDir)) {
+                const narratedFiles = FileManager.getFilesWithExtension(narratedDir, '.txt');
+                if (narratedFiles.length > 0) {
+                    sourceDir = narratedDir;
+                    console.log(chalk.yellow('既存の会話調テキストから音声を生成します'));
+                } else {
+                    sourceDir = extractedDir;
+                    console.log(chalk.yellow('会話調テキストが見つからないため、元のテキストから音声を生成します'));
                 }
+            } else if (processedFiles.length > 0) {
+                sourceDir = narratedDir;
             } else {
-                console.log(chalk.yellow('\n会話調テキストがないため、音声合成はスキップされました'));
+                sourceDir = extractedDir;
+            }
+
+            // 音声ファイルを生成
+            const audioFiles = await synthesizer.synthesizeDirectory(sourceDir, audioDir, '.aiff');
+
+            console.log(chalk.green(`\n${audioFiles.length}個の音声ファイルを生成しました`));
+            console.log(`音声ファイルの保存先: ${audioDir}`);
+
+            // すべてを結合した一つの音声ファイルも生成
+            if (audioFiles.length > 0 && !args.includes('--no-combine')) {
+                console.log(chalk.blue('\n全チャプターを結合した音声ファイルを生成中...'));
+
+                // テキストファイルのパスリストを取得
+                const textFiles = FileManager.getFilesWithExtension(sourceDir, '.txt');
+
+                // 結合した音声ファイルのパス
+                const combinedAudioPath = path.join(audioDir, `${epubReader.getFileName()}_完全版.aiff`);
+
+                // 結合音声ファイルを生成
+                await synthesizer.synthesizeCombined(textFiles, combinedAudioPath);
+
+                console.log(chalk.green(`\n結合音声ファイルを生成しました: ${combinedAudioPath}`));
+
+                // ファイルサイズを表示
+                const fileSize = FileManager.formatSize(
+                    fs.statSync(combinedAudioPath).size
+                );
+                console.log(`ファイルサイズ: ${fileSize}`);
             }
         } else {
             console.log(chalk.yellow('\n音声合成はスキップされました'));
+        }
+
+        // RSSフィード生成処理
+        if (shouldGenerateRSS) {
+            const audioDir = path.join(config.outputDir, `${epubReader.getFileName()}_audio`);
+            
+            // 音声ファイルが存在するかチェック
+            if (fs.existsSync(audioDir)) {
+                const mp3Files = fs.readdirSync(audioDir).filter(file => file.endsWith('.mp3'));
+                
+                if (mp3Files.length > 0) {
+                    console.log(chalk.blue('\nRSSフィードを生成中...'));
+                    
+                    try {
+                        const rssPath = await generatePodcastRSS(
+                            epubReader.getFileName(),
+                            config.outputDir,
+                            config.podcast.baseUrl,
+                            {
+                                author: metadata.creator || config.podcast.author,
+                                description: `技術書「${metadata.title}」をポッドキャスト形式で配信`,
+                                category: config.podcast.category,
+                                imageUrl: config.podcast.imageUrl
+                            }
+                        );
+
+                        console.log(chalk.green('\nRSSフィードの生成が完了しました！'));
+                        console.log(chalk.magenta('\n📱 ポッドキャスト配信の手順:'));
+                        console.log('1. 音声ファイル(.mp3)をS3にアップロード');
+                        console.log('2. 生成されたRSSファイルをS3にアップロード');
+                        console.log('3. RSSのURLをポッドキャストアプリに登録');
+                        console.log(chalk.blue(`\nRSSファイル: ${path.basename(rssPath)}`));
+                        
+                    } catch (error) {
+                        console.log(chalk.yellow(`RSS生成をスキップしました: ${error}`));
+                    }
+                } else {
+                    console.log(chalk.yellow('\nMP3ファイルが見つからないため、RSS生成をスキップしました'));
+                    console.log(chalk.blue('まずはmp3ファイルに変換してください:'));
+                    console.log(`cd ${audioDir}`);
+                    console.log('for f in *.aiff; do ffmpeg -i "$f" -codec:a libmp3lame -b:a 192k "${f%.aiff}.mp3"; done');
+                }
+            } else {
+                console.log(chalk.yellow('\n音声ファイルディレクトリが見つからないため、RSS生成をスキップしました'));
+            }
+        } else {
+            console.log(chalk.yellow('\nRSS生成はスキップされました'));
         }
 
         console.log(chalk.green('\n処理が完了しました'));
@@ -157,6 +217,10 @@ async function main() {
         }
         if (shouldSynthesize) {
             console.log('- 音声ファイル: output/' + epubReader.getFileName() + '_audio');
+        }
+        if (shouldGenerateRSS) {
+            const rssFileName = `${epubReader.getFileName().replace(/[^a-zA-Z0-9\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FAF]/g, '-').toLowerCase()}-podcast.xml`;
+            console.log('- RSSフィード: output/' + rssFileName);
         }
 
     } catch (error) {

@@ -56,11 +56,23 @@ export class SpeechSynthesizer {
      * @param outputPath 出力ファイルのパス (.mp3)
      */
     async synthesize(text: string, outputPath: string): Promise<void> {
+        const tempTextFile = `${outputPath}.temp.txt`;
+        const tempAiffFile = outputPath;
+        const outputFile = outputPath.replace(/\.aiff$/, '.mp3');
+        
         try {
             // ディレクトリが存在しない場合は作成
             const dir = path.dirname(outputPath);
             if (!fs.existsSync(dir)) {
                 fs.mkdirSync(dir, {recursive: true});
+            }
+
+            // 既存の一時ファイルがあれば削除
+            if (fs.existsSync(tempTextFile)) {
+                fs.unlinkSync(tempTextFile);
+            }
+            if (fs.existsSync(tempAiffFile)) {
+                fs.unlinkSync(tempAiffFile);
             }
 
             // 音声に適した形式にテキストを整形
@@ -70,24 +82,29 @@ export class SpeechSynthesizer {
             formattedText = this.addPauses(formattedText);
 
             // 一時的にテキストファイルを保存（長いテキストのため）
-            const tempTextFile = `${outputPath}.temp.txt`;
             fs.writeFileSync(tempTextFile, formattedText, 'utf8');
 
-            // sayコマンドを実行して音声ファイルを生成
-            const outputFile = outputPath.replace(/\.aiff$/, '.mp3');
-            const command = `say -r ${this.rate} -f "${tempTextFile}" -o "${outputPath}" && ffmpeg -i "${outputPath}" -codec:a libmp3lame -b:a 192k "${outputFile}" && rm "${outputPath}"`;
-            // const command = `say -v "${this.voice}" -r ${this.rate} -f "${tempTextFile}" -o "${outputPath}" && ffmpeg -i "${outputPath}" -codec:a libmp3lame -b:a 192k "${outputFile}" && rm "${outputPath}"`;
+            // sayコマンドを実行して音声ファイルを生成（-yオプションで上書き確認をスキップ）
+            const command = `say -r ${this.rate} -f "${tempTextFile}" -o "${tempAiffFile}" && ffmpeg -y -i "${tempAiffFile}" -codec:a libmp3lame -b:a 192k "${outputFile}" && rm "${tempAiffFile}"`;
 
-            console.log(`音声合成を実行中... (${path.basename(outputPath)})`);
-            await execPromise(command);
+            console.log(`音声合成を実行中... (${path.basename(outputFile)})`);
+            await execPromise(command, { timeout: 300000 }); // 5分のタイムアウト
 
             // 一時ファイルを削除
             if (fs.existsSync(tempTextFile)) {
                 fs.unlinkSync(tempTextFile);
             }
 
-            console.log(`音声ファイルを生成しました: ${outputPath}`);
+            console.log(`音声ファイルを生成しました: ${outputFile}`);
         } catch (error) {
+            // エラー時でも一時ファイルを削除
+            if (fs.existsSync(tempTextFile)) {
+                fs.unlinkSync(tempTextFile);
+            }
+            if (fs.existsSync(tempAiffFile)) {
+                fs.unlinkSync(tempAiffFile);
+            }
+            
             console.error('音声合成中にエラーが発生しました:', error);
             throw new Error(`音声合成に失敗しました: ${error}`);
         }
@@ -199,8 +216,8 @@ export class SpeechSynthesizer {
 
             fs.writeFileSync(tempTextFile, formattedText, 'utf8');
 
-            // sayコマンドで音声ファイルを生成
-            const command = `say -r ${this.rate} -f "${tempTextFile}" -o temp.aiff && ffmpeg -i temp.aiff -codec:a libmp3lame -b:a 192k "${outputFile}" && rm temp.aiff`;
+            // sayコマンドで音声ファイルを生成（-yオプションで上書き確認をスキップ）
+            const command = `say -r ${this.rate} -f "${tempTextFile}" -o temp.aiff && ffmpeg -y -i temp.aiff -codec:a libmp3lame -b:a 192k "${outputFile}" && rm temp.aiff`;
             // const command = `say -v "${this.voice}" -r ${this.rate} -f "${tempTextFile}" -o "${outputFile}"`;
 
             console.log(`結合した音声ファイルを生成中... (${path.basename(outputFile)})`);
