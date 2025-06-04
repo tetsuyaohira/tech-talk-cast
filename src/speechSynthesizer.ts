@@ -293,7 +293,7 @@ export class SpeechSynthesizer {
     async synthesizeCombined(inputFiles: string[], outputFile: string, chapters?: ChapterInfo[]): Promise<void> {
         try {
             // 一時的に結合したテキストファイルを作成
-            const tempTextFile = `${outputFile}.temp.txt`;
+            const tempTextFile = path.join(path.dirname(outputFile), 'combined_temp.txt');
             let combinedText = '';
 
             // 各ファイルのテキストを読み込んで結合
@@ -318,10 +318,10 @@ export class SpeechSynthesizer {
 
             if (isM4A && chapters && chapters.length > 0) {
                 // M4A形式でチャプター情報を含める場合
-                const tempAiffFile = 'temp.aiff';
+                const tempAiffFile = path.join(path.dirname(outputFile), 'combined_temp.aiff');
                 
                 // チャプターメタデータファイルを作成
-                const metadataFile = `${outputFile}.metadata.txt`;
+                const metadataFile = path.join(path.dirname(outputFile), 'combined_metadata.txt');
                 let metadataContent = ';FFMETADATA1\n';
                 
                 chapters.forEach((chapter, index) => {
@@ -352,6 +352,7 @@ export class SpeechSynthesizer {
             if (chapters && chapters.length > 0) {
                 console.log(`チャプター数: ${chapters.length}`);
             }
+            console.log(`コマンド: ${command}`);
             await execPromise(command);
 
             // 一時ファイルを削除
