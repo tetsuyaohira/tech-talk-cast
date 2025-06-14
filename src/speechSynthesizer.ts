@@ -314,7 +314,6 @@ export class SpeechSynthesizer {
 
             // 出力形式を判定（MP3またはM4A）
             const isM4A = outputFile.endsWith('.m4a');
-            let command: string;
 
             if (isM4A && chapters && chapters.length > 0) {
                 // M4A形式でチャプター情報を含める場合
@@ -324,7 +323,7 @@ export class SpeechSynthesizer {
                 const metadataFile = path.join(path.dirname(outputFile), 'combined_metadata.txt');
                 let metadataContent = ';FFMETADATA1\n';
                 
-                chapters.forEach((chapter, index) => {
+                chapters.forEach((chapter) => {
                     const startMs = Math.floor(chapter.startTime * 1000);
                     const endMs = Math.floor((chapter.startTime + chapter.duration) * 1000);
                     metadataContent += `[CHAPTER]\n`;
@@ -341,19 +340,63 @@ export class SpeechSynthesizer {
                 console.log(`チャプター数: ${chapters.length}`);
                 
                 // M4A with chapters
-                // Use MP4Box-style chapter format for better compatibility
-                command = `say -r ${this.rate} -f "${tempTextFile}" -o "${tempAiffFile}" && ffmpeg -y -i "${tempAiffFile}" -i "${metadataFile}" -map 0 -map_metadata 1 -codec:a aac -b:a 192k -movflags +faststart "${outputFile}" && rm "${tempAiffFile}" "${metadataFile}"`;
+                console.log(`結合した音声ファイルを生成中... (${path.basename(outputFile)})`);
+                console.log(`チャプター数: ${chapters.length}`);
+                
+                // Step 1: Generate AIFF using say command
+                console.log('Step 1: 音声合成を実行中...');
+                const sayCommand = `say -r ${this.rate} -f "${tempTextFile}" -o "${tempAiffFile}"`;
+                console.log(`実行コマンド: ${sayCommand}`);
+                console.log(`入力ファイル: ${tempTextFile} (${(fs.statSync(tempTextFile).size / 1024).toFixed(2)} KB)`);
+                await execPromise(sayCommand);
+                
+                // Step 2: Convert to M4A with chapters using ffmpeg
+                console.log('Step 2: M4A変換とチャプター埋め込みを実行中...');
+                const ffmpegCommand = `ffmpeg -y -i "${tempAiffFile}" -i "${metadataFile}" -map 0 -map_metadata 1 -codec:a aac -b:a 192k -movflags +faststart "${outputFile}"`;
+                console.log(`実行コマンド: ${ffmpegCommand}`);
+                if (fs.existsSync(tempAiffFile)) {
+                    console.log(`AIFFファイル: ${tempAiffFile} (${(fs.statSync(tempAiffFile).size / 1024 / 1024).toFixed(2)} MB)`);
+                }
+                if (fs.existsSync(metadataFile)) {
+                    console.log(`メタデータファイル: ${metadataFile} (${fs.statSync(metadataFile).size} bytes)`);
+                }
+                await execPromise(ffmpegCommand);
+                
+                // Step 3: Clean up temporary files
+                console.log('Step 3: 一時ファイルを削除中...');
+                if (fs.existsSync(tempAiffFile)) {
+                    fs.unlinkSync(tempAiffFile);
+                }
+                if (fs.existsSync(metadataFile)) {
+                    fs.unlinkSync(metadataFile);
+                }
             } else {
                 // MP3形式（チャプターなし）
-                command = `say -r ${this.rate} -f "${tempTextFile}" -o "temp.aiff" && ffmpeg -y -i "temp.aiff" -codec:a libmp3lame -b:a 192k "${outputFile}" && rm "temp.aiff"`;
+                console.log(`結合した音声ファイルを生成中... (${path.basename(outputFile)})`);
+                
+                // Step 1: Generate AIFF using say command
+                console.log('Step 1: 音声合成を実行中...');
+                const tempAiffFile = path.join(path.dirname(outputFile), 'combined_temp.aiff');
+                const sayCommand = `say -r ${this.rate} -f "${tempTextFile}" -o "${tempAiffFile}"`;
+                console.log(`実行コマンド: ${sayCommand}`);
+                console.log(`入力ファイル: ${tempTextFile} (${(fs.statSync(tempTextFile).size / 1024).toFixed(2)} KB)`);
+                await execPromise(sayCommand);
+                
+                // Step 2: Convert to MP3 using ffmpeg
+                console.log('Step 2: MP3変換を実行中...');
+                const ffmpegCommand = `ffmpeg -y -i "${tempAiffFile}" -codec:a libmp3lame -b:a 192k "${outputFile}"`;
+                console.log(`実行コマンド: ${ffmpegCommand}`);
+                if (fs.existsSync(tempAiffFile)) {
+                    console.log(`AIFFファイル: ${tempAiffFile} (${(fs.statSync(tempAiffFile).size / 1024 / 1024).toFixed(2)} MB)`);
+                }
+                await execPromise(ffmpegCommand);
+                
+                // Step 3: Clean up temporary files
+                console.log('Step 3: 一時ファイルを削除中...');
+                if (fs.existsSync(tempAiffFile)) {
+                    fs.unlinkSync(tempAiffFile);
+                }
             }
-
-            console.log(`結合した音声ファイルを生成中... (${path.basename(outputFile)})`);
-            if (chapters && chapters.length > 0) {
-                console.log(`チャプター数: ${chapters.length}`);
-            }
-            console.log(`コマンド: ${command}`);
-            await execPromise(command);
 
             // 一時ファイルを削除
             if (fs.existsSync(tempTextFile)) {

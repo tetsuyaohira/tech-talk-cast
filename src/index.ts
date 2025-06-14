@@ -101,14 +101,14 @@ async function main() {
         const combineOnly = args.includes('--combine-only');
 
         // 要約テキスト保存先
-        const narratedDir = path.join(config.outputDir, `${epubReader.getFileName()}_narrated`);
+        const narratedDir = path.join(config.outputDir, `${FileManager.sanitizeFileName(epubReader.getFileName())}_narrated`);
         let processedFiles: string[] = [];
 
         // --combine-onlyの場合、既存の音声ファイルから結合のみ実行
         if (combineOnly) {
             console.log(chalk.blue('\n--combine-only モード: 既存の音声ファイルを結合します'));
             
-            const audioDir = path.join(config.outputDir, `${epubReader.getFileName()}_audio`);
+            const audioDir = path.join(config.outputDir, `${FileManager.sanitizeFileName(epubReader.getFileName())}_audio`);
             
             // 音声ファイルディレクトリの存在確認
             if (!fs.existsSync(audioDir)) {
@@ -268,7 +268,7 @@ async function main() {
             );
 
             // 音声ファイルの保存先ディレクトリ
-            const audioDir = path.join(config.outputDir, `${epubReader.getFileName()}_audio`);
+            const audioDir = path.join(config.outputDir, `${FileManager.sanitizeFileName(epubReader.getFileName())}_audio`);
 
             // 音声変換する元ファイルリストを決定
             let sourceFiles: string[] = [];
@@ -372,12 +372,12 @@ async function main() {
 
         // 使用方法の説明
         console.log(chalk.cyan('\n=== 使用方法 ==='));
-        console.log('- 抽出テキスト: output/' + epubReader.getFileName());
+        console.log('- 抽出テキスト: output/' + FileManager.sanitizeFileName(epubReader.getFileName()));
         if (processedFiles.length > 0) {
-            console.log('- 会話調テキスト: output/' + epubReader.getFileName() + '_narrated');
+            console.log('- 会話調テキスト: output/' + FileManager.sanitizeFileName(epubReader.getFileName()) + '_narrated');
         }
         if (shouldSynthesize) {
-            console.log('- 音声ファイル: output/' + epubReader.getFileName() + '_audio');
+            console.log('- 音声ファイル: output/' + FileManager.sanitizeFileName(epubReader.getFileName()) + '_audio');
         }
         if (shouldGenerateRSS) {
             const rssFileName = `${epubReader.getFileName().replace(/[^a-zA-Z0-9\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FAF]/g, '-').toLowerCase()}-podcast.xml`;

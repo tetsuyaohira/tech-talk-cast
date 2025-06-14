@@ -3,6 +3,7 @@ import * as path from 'path';
 import {promisify} from 'util';
 import EPub from 'epub';
 import {config} from './config';
+import {FileManager} from './fileManager';
 
 // EPubの型定義
 type EPubType = any;
@@ -376,7 +377,7 @@ export class EpubReader {
             const extractedTitle = this.extractTitleFromContent(chapter.content, chapter.title);
             
             // ファイル名用にタイトルをサニタイズ
-            const sanitizedTitle = extractedTitle.replace(/[\\/:*?"<>|]/g, '_');
+            const sanitizedTitle = FileManager.sanitizeFileName(extractedTitle);
             const filename = `${String(chapter.order).padStart(2, '0')}-${sanitizedTitle}.txt`;
             const filePath = path.join(bookDir, filename);
 

@@ -7,6 +7,26 @@ import {config} from './config';
  */
 export class FileManager {
     /**
+     * ファイル名に使える安全な文字に変換する
+     */
+    static sanitizeFileName(fileName: string): string {
+        // 特殊文字を安全な文字に置換
+        return fileName
+            .replace(/\?/g, '？')      // 半角?を全角？に
+            .replace(/:/g, '：')       // 半角:を全角：に
+            .replace(/\*/g, '＊')      // 半角*を全角＊に
+            .replace(/"/g, '"')        // ダブルクォートを全角に
+            .replace(/</g, '＜')       // 小なりを全角に
+            .replace(/>/g, '＞')       // 大なりを全角に
+            .replace(/\|/g, '｜')      // パイプを全角に
+            .replace(/\//g, '／')      // スラッシュを全角に
+            .replace(/\\/g, '＼')      // バックスラッシュを全角に
+            .replace(/——/g, '＝＝')   // EMダッシュ2つを＝＝に
+            .replace(/—/g, '－')       // EMダッシュ1つを全角ハイフンに
+            .replace(/–/g, '－')       // ENダッシュを全角ハイフンに
+            .trim();                   // 前後の空白を削除
+    }
+    /**
      * EPUBファイルの存在を確認
      */
     static validateEpubFile(filePath: string): boolean {
@@ -42,7 +62,9 @@ export class FileManager {
      * 書籍ディレクトリを作成
      */
     static createBookDirectory(bookName: string): string {
-        const bookDir = path.join(config.outputDir, bookName);
+        // ディレクトリ名を安全な文字に変換
+        const safeBookName = FileManager.sanitizeFileName(bookName);
+        const bookDir = path.join(config.outputDir, safeBookName);
 
         if (!fs.existsSync(bookDir)) {
             try {
